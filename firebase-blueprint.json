@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "User profile and authentication mapping",
+      "type": "object",
+      "properties": {
+        "matricula": { "type": "string", "description": "Employee ID number" },
+        "name": { "type": "string", "description": "Full name" },
+        "role": { "type": "string", "enum": ["employee", "manager"] },
+        "email": { "type": "string" }
+      },
+      "required": ["matricula", "name", "role"]
+    },
+    "DailyFeedback": {
+      "title": "Daily Feedback",
+      "description": "Daily organizational climate report",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "matricula": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "checkInTime": { "type": "string" },
+        "checkOutAt": { "type": "string", "format": "date-time" },
+        "responses": {
+          "type": "object",
+          "properties": {
+            "relationships": { "type": "integer", "description": "1-4 Scale" },
+            "respect": { "type": "integer" },
+            "collaboration": { "type": "integer" },
+            "communication": { "type": "integer" },
+            "expression": { "type": "integer" },
+            "environment": { "type": "integer" },
+            "interpersonalRespect": { "type": "integer" },
+            "generalClimate": { "type": "integer" },
+            "belonging": { "type": "integer" }
+          }
+        },
+        "comment": { "type": "string" }
+      },
+      "required": ["employeeId", "date", "responses", "checkOutAt"]
+    },
+    "DailyStats": {
+      "title": "Daily Statistics",
+      "description": "Aggregated daily metrics",
+      "type": "object",
+      "properties": {
+        "count": { "type": "integer", "description": "Total feedback count for the day" }
+      }
+    }
+  },
+  "firestore": {
+    "/employees/{employeeUid}": {
+      "schema": "Employee",
+      "description": "Employee registration"
+    },
+    "/feedbacks/{feedbackId}": {
+      "schema": "DailyFeedback",
+      "description": "Daily survey responses"
+    },
+    "/daily_stats/{date}": {
+      "schema": "DailyStats",
+      "description": "Public participation counter"
+    }
+  }
+}

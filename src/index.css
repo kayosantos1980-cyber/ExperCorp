@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-primary: #2563eb;
+  --color-surface-bg: #f4f7fa;
+  --color-border-subtle: #e2e8f0;
+  --color-text-main: #1e293b;
+  --color-text-muted: #64748b;
+  --color-accent-blue: #2563eb;
+}
+
+@layer base {
+  body {
+    @apply bg-surface-bg text-text-main antialiased;
+  }
+}

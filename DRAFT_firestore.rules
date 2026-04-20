@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function isManager() {
+      return isSignedIn() && get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.role == 'manager';
+    }
+
+    // 2. Validation Blueprints
+    function isValidEmployee(data) {
+      return data.keys().hasAll(['matricula', 'name', 'role']) 
+             && data.matricula is string && data.matricula.size() <= 50
+             && data.name is string && data.name.size() <= 100
+             && data.role in ['employee', 'manager'];
+    }
+
+    function isValidFeedback(data) {
+      let responses = data.responses;
+      return data.keys().hasAll(['employeeId', 'date', 'responses', 'checkOutAt'])
+             && data.employeeId == request.auth.uid
+             && data.date is string && data.date.size() == 10 // YYYY-MM-DD
+             && data.checkOutAt == request.time
+             && responses.keys().hasAll(['relationships', 'respect', 'collaboration', 'communication', 'expression', 'environment', 'interpersonalRespect', 'generalClimate', 'belonging'])
+             && responses.relationships >= 1 && responses.relationships <= 4
+             && (data.get('comment', '') is string && data.get('comment', '').size() <= 1000);
+    }
+
+    // 1. Master Gates
+    match /employees/{employeeUid} {
+      allow get: if isSignedIn();
+      allow list: if isManager();
+      allow create: if isOwner(employeeUid) && isValidEmployee(incoming()) && incoming().role == 'employee';
+      allow update: if isOwner(employeeUid) && incoming().diff(existing()).affectedKeys().hasOnly(['name']) && isValidEmployee(incoming());
+    }
+
+    match /feedbacks/{feedbackId} {
+      allow get: if isSignedIn() && (isOwner(existing().employeeId) || isManager());
+      allow list: if isSignedIn() && (resource.data.employeeId == request.auth.uid || isManager());
+      allow create: if isSignedIn() && isValidFeedback(incoming());
+      allow update: if false; // Feedbacks are immutable
+      allow delete: if isManager();
+    }
+  }
+}
