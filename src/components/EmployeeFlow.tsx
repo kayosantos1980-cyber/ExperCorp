@@ -8,23 +8,30 @@ import { cn } from '../lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-const QUESTIONS = [
-  { id: 'relationships', text: 'Como foi seu relacionamento com colegas hoje?' },
-  { id: 'respect', text: 'Você se sentiu respeitado(a) hoje?' },
-  { id: 'collaboration', text: 'Como foi a colaboração da equipe hoje?' },
-  { id: 'communication', text: 'A comunicação hoje foi:' },
-  { id: 'expression', text: 'Você se sentiu à vontade para se expressar?' },
-  { id: 'environment', text: 'O ambiente hoje foi tranquilo?' },
-  { id: 'interpersonalRespect', text: 'Houve respeito entre as pessoas hoje?' },
-  { id: 'generalClimate', text: 'Como você avalia o clima geral de hoje?' },
-  { id: 'belonging', text: 'Você se sentiu parte da equipe hoje?' },
-];
-
-const SCALE = [
+const QUALITY_SCALE = [
   { value: 4, label: 'Muito bom', emoji: '😄', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100' },
   { value: 3, label: 'Bom', emoji: '🙂', color: 'bg-green-50 text-green-600 border-green-100 hover:bg-green-100' },
   { value: 2, label: 'Regular', emoji: '😐', color: 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100' },
   { value: 1, label: 'Ruim', emoji: '🙁', color: 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100' },
+];
+
+const AGREEMENT_SCALE = [
+  { value: 4, label: 'Sim', emoji: '😄', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100' },
+  { value: 3, label: 'Talvez', emoji: '🙂', color: 'bg-green-50 text-green-600 border-green-100 hover:bg-green-100' },
+  { value: 2, label: 'Não muito', emoji: '😐', color: 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100' },
+  { value: 1, label: 'Nem um pouco', emoji: '🙁', color: 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100' },
+];
+
+const QUESTIONS = [
+  { id: 'relationships', text: 'Como foi seu relacionamento com colegas hoje?', scale: QUALITY_SCALE },
+  { id: 'respect', text: 'Você se sentiu respeitado(a) hoje?', scale: AGREEMENT_SCALE },
+  { id: 'collaboration', text: 'Como foi a colaboração da equipe hoje?', scale: QUALITY_SCALE },
+  { id: 'communication', text: 'A comunicação hoje foi:', scale: QUALITY_SCALE },
+  { id: 'expression', text: 'Você se sentiu à vontade para se expressar?', scale: AGREEMENT_SCALE },
+  { id: 'environment', text: 'O ambiente hoje foi tranquilo?', scale: AGREEMENT_SCALE },
+  { id: 'interpersonalRespect', text: 'Houve respeito entre as pessoas hoje?', scale: AGREEMENT_SCALE },
+  { id: 'generalClimate', text: 'Como você avalia o clima geral de hoje?', scale: QUALITY_SCALE },
+  { id: 'belonging', text: 'Você se sentiu parte da equipe hoje?', scale: AGREEMENT_SCALE },
 ];
 
 export default function EmployeeFlow() {
@@ -306,7 +313,7 @@ export default function EmployeeFlow() {
                 </h2>
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  {SCALE.map((item) => (
+                  {QUESTIONS[step - 1].scale.map((item) => (
                     <button
                       key={item.value}
                       onClick={() => handleResponse(QUESTIONS[step - 1].id, item.value)}

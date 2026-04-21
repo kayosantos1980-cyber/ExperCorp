@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../lib/firebase';
-import { collection, query, orderBy, onSnapshot, limit } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, limit, writeBatch, doc, getDoc, setDoc, getDocs } from 'firebase/firestore';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Legend, AreaChart, Area
 } from 'recharts';
 import { 
   Download, Users, TrendingUp, AlertCircle, Calendar, 
-  Search, Filter, LogOut, ChevronRight, FileSpreadsheet
+  Search, Filter, LogOut, ChevronRight, FileSpreadsheet, Trash2, Info, Trophy, Medal
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isLastDayOfMonth, isSameMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
@@ -44,7 +44,71 @@ export default function ManagerDashboard() {
   const [loadingState, setLoadingState] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFeedback, setSelectedFeedback] = useState<Feedback | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'history' | 'ranking'>('overview');
+  const [showWarning, setShowWarning] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+
+  useEffect(() => {
+    const checkPurgeAndWarning = async () => {
+      const now = new Date();
+      const currentMonthYear = format(now, 'MM-yyyy');
+      
+      // 1. Check if we need to show warning (Last day of month)
+      if (isLastDayOfMonth(now)) {
+        setShowWarning(true);
+      }
+
+      // 2. Check if we need to auto-purge (New month detected)
+      const systemStateRef = doc(db, 'system_state', 'auto_purge');
+      const systemStateSnap = await getDoc(systemStateRef);
+      const lastPurgeMonth = systemStateSnap.exists() ? systemStateSnap.data().lastPurgeMonth : null;
+
+      if (lastPurgeMonth && lastPurgeMonth !== currentMonthYear) {
+        console.log("Novo mês detectado. Iniciando limpeza automática...");
+        await performAutoPurge(currentMonthYear);
+      } else if (!lastPurgeMonth) {
+        await setDoc(systemStateRef, { lastPurgeMonth: currentMonthYear });
+      }
+    };
+
+    if (!loading) {
+      checkPurgeAndWarning();
+    }
+  }, [loading]);
+
+  const performAutoPurge = async (newMonthYear: string) => {
+    setIsPurging(true);
+    try {
+      const now = new Date();
+      const feedbacksRef = collection(db, 'feedbacks');
+      const snapshot = await getDocs(feedbacksRef);
+      
+      const batch = writeBatch(db);
+      let count = 0;
+      
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        const dateStr = data.date; 
+        if (dateStr) {
+          const feedbackDate = new Date(dateStr);
+          if (!isSameMonth(feedbackDate, now)) {
+            batch.delete(docSnap.ref);
+            count++;
+          }
+        }
+      });
+
+      if (count > 0) {
+        await batch.commit();
+      }
+      
+      await setDoc(doc(db, 'system_state', 'auto_purge'), { lastPurgeMonth: newMonthYear });
+    } catch (error) {
+      console.error("Erro na limpeza automática:", error);
+    } finally {
+      setIsPurging(false);
+    }
+  };
 
   useEffect(() => {
     if (!loading) {
@@ -60,6 +124,26 @@ export default function ManagerDashboard() {
     }
   }, [loading]);
 
+  const getRankingData = () => {
+    const employeeMap: Record<string, { name: string, scores: number[] }> = {};
+    
+    feedbacks.forEach(f => {
+      if (!employeeMap[f.matricula]) {
+        employeeMap[f.matricula] = { name: f.employeeName, scores: [] };
+      }
+      const responses = Object.values(f.responses) as number[];
+      const avg = responses.reduce((a, b) => a + b, 0) / responses.length;
+      employeeMap[f.matricula].scores.push(avg);
+    });
+
+    return Object.entries(employeeMap)
+      .map(([matricula, data]) => ({
+        matricula,
+        name: data.name,
+        average: data.scores.reduce((a, b) => a + b, 0) / data.scores.length
+      }))
+      .sort((a, b) => b.average - a.average);
+  };
   const calculateAverage = (key: string, data = feedbacks): string => {
     if (data.length === 0) return '0';
     const sum = data.reduce((acc, curr) => acc + (curr.responses[key] || 0), 0);
@@ -147,6 +231,16 @@ export default function ManagerDashboard() {
             Equipe
           </button>
           <button 
+            onClick={() => setActiveTab('ranking')}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 rounded-lg font-bold text-sm transition-all",
+              activeTab === 'ranking' ? "bg-[#eff6ff] text-[#2563eb]" : "text-[#64748b] hover:bg-[#f8fafc]"
+            )}
+          >
+            <Trophy size={18} />
+            Ranking do Mês
+          </button>
+          <button 
             onClick={() => setActiveTab('history')}
             className={cn(
               "w-full flex items-center gap-3 px-4 py-3 rounded-lg font-bold text-sm transition-all",
@@ -173,7 +267,7 @@ export default function ManagerDashboard() {
       <main className="flex-1 overflow-y-auto p-6 md:p-10">
         <header className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#0f172a]">Analytics de Clima</h1>
+            <h1 className="text-2xl font-bold text-[#0f172a]">Análise de Clima</h1>
             <p className="text-[#64748b] text-[14px]">Gestão baseada em dados reais da sua equipe.</p>
           </div>
           <div className="flex items-center gap-3">
@@ -186,6 +280,56 @@ export default function ManagerDashboard() {
             </button>
           </div>
         </header>
+
+        {/* Warning Banner */}
+        <AnimatePresence>
+          {showWarning && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="mb-8"
+            >
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 flex flex-col md:flex-row items-center gap-4">
+                <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center shrink-0">
+                  <AlertCircle size={24} />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-amber-900 font-bold text-sm uppercase tracking-wider">Aviso de Limpeza Mensal</h4>
+                  <p className="text-amber-800 text-[13px] mt-0.5 leading-relaxed">
+                    Hoje é o último dia do mês. Para manter a privacidade e o desempenho, 
+                    <strong> todos os feedbacks do mês atual serão arquivados/removidos automaticamente à meia-noite</strong>. 
+                    Recomendamos exportar o relatório XLS agora se desejar manter uma cópia permanente.
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowWarning(false)}
+                  className="px-4 py-2 text-amber-600 font-bold text-[11px] uppercase tracking-widest hover:bg-amber-100 rounded-lg transition-all"
+                >
+                  Entendido
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Purging Overlay */}
+        <AnimatePresence>
+          {isPurging && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-white/80 backdrop-blur-md flex items-center justify-center"
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+                <h3 className="text-xl font-bold text-slate-900">Configurando Novo Mês...</h3>
+                <p className="text-slate-500 mt-2 font-medium">Limpando registros antigos para manter sua privacidade.</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Tab Content */}
         <AnimatePresence mode="wait">
@@ -342,6 +486,69 @@ export default function ManagerDashboard() {
             </motion.div>
           )}
 
+          {activeTab === 'ranking' && (
+            <motion.div
+              key="ranking"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <div className="bg-white rounded-2xl shadow-sm border border-[#e2e8f0] p-8">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shadow-inner">
+                    <Trophy size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-[#0f172a]">Ranking de Experiência</h3>
+                    <p className="text-[#64748b] text-sm">Top colaboradores com as melhores médias de clima no mês.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {getRankingData().map((item, index) => (
+                    <motion.div 
+                      key={item.matricula}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      className="flex items-center justify-between p-4 bg-[#f8fafc] rounded-xl border border-[#f1f5f9] hover:border-blue-200 transition-all"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn(
+                          "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm",
+                          index === 0 ? "bg-amber-100 text-amber-600 border-2 border-amber-200" :
+                          index === 1 ? "bg-slate-100 text-slate-600 border-2 border-slate-200" :
+                          index === 2 ? "bg-orange-100 text-orange-600 border-2 border-orange-200" :
+                          "bg-white text-slate-400 border border-slate-100"
+                        )}>
+                          {index === 0 ? <Medal size={20} /> : index + 1}
+                        </div>
+                        <div>
+                          <p className="font-bold text-[#1e293b]">{item.name}</p>
+                          <p className="text-[11px] text-[#94a3b8] uppercase tracking-wider font-bold">Matrícula {item.matricula}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-black text-[#2563eb] leading-tight">
+                          {item.average.toFixed(1)}
+                        </div>
+                        <div className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest">Média Geral</div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  
+                  {getRankingData().length === 0 && (
+                    <div className="text-center py-20 bg-[#f8fafc] rounded-2xl border-2 border-dashed border-[#e2e8f0]">
+                      <Users size={48} className="mx-auto text-[#cbd5e1] mb-4" />
+                      <p className="text-[#64748b] font-bold">Nenhum feedback registrado ainda para este mês.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {activeTab === 'history' && (
             <motion.div
               key="history"
@@ -478,7 +685,9 @@ export default function ManagerDashboard() {
                              "text-[13px] font-bold",
                              (value as number) >= 3 ? "text-emerald-600" : (value as number) >= 2 ? "text-amber-600" : "text-rose-600"
                            )}>
-                             {value === 4 ? 'Excelente' : value === 3 ? 'Bom' : value === 2 ? 'Regular' : 'Ruim'}
+                             {['respect', 'expression', 'environment', 'interpersonalRespect', 'belonging'].includes(key) 
+                               ? (value === 4 ? 'Sim' : value === 3 ? 'Talvez' : value === 2 ? 'Não muito' : 'Nem um pouco')
+                               : (value === 4 ? 'Muito bom' : value === 3 ? 'Bom' : value === 2 ? 'Regular' : 'Ruim')}
                            </span>
                         </div>
                         <span className="text-xs font-extrabold text-[#cbd5e1]">Nota {value}</span>
